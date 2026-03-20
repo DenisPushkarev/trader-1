@@ -1,0 +1,27 @@
+syntax = "proto3";
+package ton.trading.v1;
+option go_package = "github.com/trader-1/trader-1/packages/contracts/gen/go/v1;contractsv1";
+
+import "v1/common.proto";
+
+message RawEvent {
+  string event_id = 1;
+  string source = 2;
+  string source_event_id = 3;
+  string payload = 4;
+  int64 timestamp_ms = 5;
+  map<string, string> metadata = 6;
+}
+
+message NormalizedEvent {
+  string event_id = 1;
+  SourceReference source_ref = 2;
+  string event_type = 3;
+  string asset = 4;
+  double sentiment = 5;
+  double impact = 6;
+  string content = 7;
+  int64 timestamp_ms = 8;
+  string enrichment_version = 9;
+  map<string, string> metadata = 10;
+}

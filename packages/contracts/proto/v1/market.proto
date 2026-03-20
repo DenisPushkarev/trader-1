@@ -1,0 +1,13 @@
+syntax = "proto3";
+package ton.trading.v1;
+option go_package = "github.com/trader-1/trader-1/packages/contracts/gen/go/v1;contractsv1";
+
+message MarketContextSnapshot {
+  string context_id = 1;
+  string asset = 2;
+  double price = 3;
+  double volume_24h = 4;
+  double volatility = 5;
+  int64 timestamp_ms = 6;
+  map<string, double> indicators = 7;
+}
