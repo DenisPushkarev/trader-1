@@ -4,3 +4,4 @@ actions-runner/
 setup/actions-runner/
 **/actions-runner-linux-*.tar.gz
 ~/actions-runners/
+.github/tmp/

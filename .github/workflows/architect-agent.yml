@@ -6,7 +6,7 @@ on:
       issue_number:
         required: true
         type: string
-      task_packet_path:
+      task_packet_json:
         required: true
         type: string
   workflow_call:
@@ -14,7 +14,7 @@ on:
       issue_number:
         required: true
         type: string
-      task_packet_path:
+      task_packet_json:
         required: true
         type: string
 
@@ -28,12 +28,16 @@ jobs:
     runs-on: [self-hosted, linux, agent, architect]
     timeout-minutes: 30
     env:
-      TASK_PACKET: ${{ inputs.task_packet_path }}
+      TASK_PACKET: .github/tmp/task-packet.json
+      TASK_PACKET_JSON: ${{ inputs.task_packet_json }}
       ISSUE_NUMBER: ${{ inputs.issue_number }}
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_TOKEN }}
+
+      - name: Write task packet
+        run: mkdir -p .github/tmp && echo "$TASK_PACKET_JSON" > "$TASK_PACKET"
 
       - name: Install dependencies
         run: pip3 install --quiet --break-system-packages pyyaml requests
@@ -71,10 +75,18 @@ jobs:
         run: |
           git config user.name  "architect-agent"
           git config user.email "architect-agent@github-actions"
-          git stash -u
+          PLAN="docs/ai/plans/ISSUE-${ISSUE_NUMBER}.md"
+          TMPPLAN=$(mktemp)
+          cp "$PLAN" "$TMPPLAN"
+          # Clean any leftover state from previous failed runs on this self-hosted runner
+          git rebase --abort 2>/dev/null || true
+          git merge --abort  2>/dev/null || true
+          git reset --hard HEAD
+          git clean -fd -- docs/
           git pull --rebase origin main
-          git stash pop
-          git add "docs/ai/plans/ISSUE-${ISSUE_NUMBER}.md"
+          mkdir -p docs/ai/plans
+          cp "$TMPPLAN" "$PLAN"
+          git add "$PLAN"
           git diff --cached --quiet || git commit -m "docs: implementation plan for ISSUE-${ISSUE_NUMBER} [skip ci]"
           git push origin main
 
@@ -94,7 +106,7 @@ jobs:
             --add-label "agent/planned"
 
           # Check if manual approval is required
-          REQUIRES_APPROVAL=$(python3 -c "import json,os; t=json.load(open(os.environ['TASK_PACKET'])); print('true' if t.get('route',{}).get('requires_manual_plan_approval',True) else 'false')")
+          REQUIRES_APPROVAL=$(python3 -c "import json,os; t=json.load(open(os.environ['TASK_PACKET'])); print('true' if t.get('requires_manual_plan_approval',True) else 'false')")
           if [[ "$REQUIRES_APPROVAL" == "false" ]]; then
             echo "Auto-approving: adding agent/build-ready"
             gh issue edit "$ISSUE_NUMBER" \

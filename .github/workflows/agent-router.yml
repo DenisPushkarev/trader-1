@@ -7,7 +7,7 @@ on:
     types: [created]
 
 permissions:
-  contents: write   # needed to commit task packet
+  contents: read
   issues: write
   pull-requests: write
   actions: write    # needed to trigger architect-agent.yml
@@ -24,17 +24,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # Use PAT so we can push the task packet commit
-          token: ${{ secrets.GH_TOKEN }}
 
       - name: Install dependencies
         run: pip3 install --quiet --break-system-packages pyyaml
-
-      - name: Configure git identity
-        run: |
-          git config user.name  "agent-router"
-          git config user.email "agent-router@github-actions"
 
       - name: Route issue and trigger architect
         env:

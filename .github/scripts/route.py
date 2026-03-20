@@ -278,35 +278,9 @@ def main() -> None:
         "route": route,
     }
 
-    # ── Write task packet and commit to repo ─────────────────────────────────
-    # The architect-agent runs on a self-hosted runner with a fresh checkout,
-    # so the packet must be committed to the repo before triggering the workflow.
-    import subprocess
-    os.makedirs(".github/tmp", exist_ok=True)
-    packet_path = f".github/tmp/task-packet-{args.issue_number}.json"
-    with open(packet_path, "w") as f:
-        json.dump(task_packet, f, indent=2)
-    print(f"[route] task packet written: {packet_path}")
-
-    # Commit and push so architect-agent can access it via checkout
-    result = subprocess.run(
-        ["git", "add", packet_path],
-        capture_output=True, text=True
-    )
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--quiet"],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:  # there are staged changes
-        subprocess.run(
-            ["git", "commit", "-m",
-             f"chore: task packet for issue #{args.issue_number} [skip ci]"],
-            check=True
-        )
-        subprocess.run(["git", "push", "origin", "main"], check=True)
-        print(f"[route] task packet committed and pushed")
-    else:
-        print(f"[route] task packet unchanged, no commit needed")
+    # ── Build task packet ─────────────────────────────────────────────────────
+    task_packet_json = json.dumps(task_packet)
+    print(f"[route] task packet built for issue #{args.issue_number}")
 
     # ── Post routing summary comment ──────────────────────────────────────────
     approval_note = (
@@ -351,7 +325,7 @@ Next: architect-agent will produce an implementation plan and post it here.
         "--repo", args.repo,
         "--ref", "main",
         "-f", f"issue_number={args.issue_number}",
-        "-f", f"task_packet_path={packet_path}",
+        "-f", f"task_packet_json={task_packet_json}",
     ])
     print("[route] architect-agent.yml triggered ✓")
 
