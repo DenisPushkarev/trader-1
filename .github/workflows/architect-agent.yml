@@ -108,10 +108,17 @@ jobs:
           # Check if manual approval is required
           REQUIRES_APPROVAL=$(python3 -c "import json,os; t=json.load(open(os.environ['TASK_PACKET'])); print('true' if t.get('requires_manual_plan_approval',True) else 'false')")
           if [[ "$REQUIRES_APPROVAL" == "false" ]]; then
-            echo "Auto-approving: adding agent/build-ready"
+            echo "Auto-approving: adding agent/build-ready and triggering developer-agent"
             gh issue edit "$ISSUE_NUMBER" \
               --repo "$GITHUB_REPOSITORY" \
               --add-label "agent/build-ready"
+            gh workflow run developer-agent.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f "issue_number=${ISSUE_NUMBER}" \
+              -f "task_packet_json=${TASK_PACKET_JSON}" \
+              -f "plan_path=docs/ai/plans/ISSUE-${ISSUE_NUMBER}.md"
+            echo "developer-agent.yml triggered"
           else
             echo "Manual approval required — NOT adding agent/build-ready"
             gh issue comment "$ISSUE_NUMBER" \

@@ -185,6 +185,7 @@ def main() -> None:
     parser.add_argument("--issue-number", required=True, type=int)
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--trigger-comment", default="", help="Comment body if triggered by comment")
+    parser.add_argument("--trigger-label", default="", help="Label name if triggered by label event")
     args = parser.parse_args()
 
     if not args.repo:
@@ -281,6 +282,21 @@ def main() -> None:
     # ── Build task packet ─────────────────────────────────────────────────────
     task_packet_json = json.dumps(task_packet)
     print(f"[route] task packet built for issue #{args.issue_number}")
+
+    # ── If triggered by agent/build-ready label → route to developer-agent ──────
+    if args.trigger_label == "agent/build-ready":
+        plan_path = f"docs/ai/plans/ISSUE-{args.issue_number}.md"
+        print(f"[route] agent/build-ready label — triggering developer-agent.yml")
+        gh_run([
+            "workflow", "run", "developer-agent.yml",
+            "--repo", args.repo,
+            "--ref", "main",
+            "-f", f"issue_number={args.issue_number}",
+            "-f", f"task_packet_json={task_packet_json}",
+            "-f", f"plan_path={plan_path}",
+        ])
+        print("[route] developer-agent.yml triggered ✓")
+        return
 
     # ── Post routing summary comment ──────────────────────────────────────────
     approval_note = (

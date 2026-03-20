@@ -14,12 +14,14 @@ permissions:
 
 jobs:
   route:
-    # Skip bot comments; only run on /plan comment or issue events
+    # Fire only on: /plan comment  OR  manual agent/build-ready label
     if: |
-      github.event_name == 'issues' ||
       (github.event_name == 'issue_comment' &&
        contains(github.event.comment.body, '/plan') &&
-       github.event.comment.user.type != 'Bot')
+       github.event.comment.user.type != 'Bot') ||
+      (github.event_name == 'issues' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'agent/build-ready')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,14 +32,15 @@ jobs:
 
       - name: Route issue and trigger architect
         env:
-          # Override GITHUB_TOKEN so gh CLI uses the PAT (which has workflow scope)
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           ISSUE_NUMBER="${{ github.event.issue.number }}"
           COMMENT_BODY="${{ github.event.comment.body }}"
+          LABEL_NAME="${{ github.event.label.name }}"
 
           python3 .github/scripts/route.py \
             --issue-number "$ISSUE_NUMBER" \
             --repo "$GITHUB_REPOSITORY" \
-            --trigger-comment "$COMMENT_BODY"
+            --trigger-comment "$COMMENT_BODY" \
+            --trigger-label "$LABEL_NAME"
