@@ -12,7 +12,7 @@
 models:
   # Architect: designs plans, analyzes bounded contexts, high reasoning required
   # Uses OpenRouter — change to any model at https://openrouter.ai/models
-  architect: anthropic/claude-opus-4-5
+  architect: anthropic/claude-opus-4.6
 
   # Developer: uses Claude Code directly (Anthropic API), NOT OpenRouter.
   # Claude model is controlled by ANTHROPIC_API_KEY + claude CLI defaults.
