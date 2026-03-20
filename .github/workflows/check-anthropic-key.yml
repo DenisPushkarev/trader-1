@@ -1,0 +1,28 @@
+name: check-anthropic-key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: [self-hosted, linux, agent, developer]
+    steps:
+      - name: Check Anthropic API key validity
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "=== Key prefix (first 20 chars) ==="
+          echo "$ANTHROPIC_API_KEY" | cut -c1-20
+
+          echo ""
+          echo "=== Calling Anthropic API ==="
+          HTTP_STATUS=$(curl -s -o /tmp/anthropic_resp.json -w "%{http_code}" \
+            https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d '{"model":"claude-3-haiku-20240307","max_tokens":16,"messages":[{"role":"user","content":"ping"}]}')
+
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Response:"
+          cat /tmp/anthropic_resp.json
