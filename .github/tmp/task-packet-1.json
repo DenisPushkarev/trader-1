@@ -1,0 +1,59 @@
+{
+  "task_id": "GH-1",
+  "task_type": "type/feature",
+  "area": "area/signal-engine",
+  "objective": "feat: add basic signal confidence score to signal-engine",
+  "constraints": [
+    "Do NOT rename existing fields",
+    "Protobuf change is additive \u2014 no breaking change expected"
+  ],
+  "acceptance_criteria": [
+    "`signals.generated` NATS message includes `confidence_score` field",
+    "Score is derived from indicator agreement ratio (agreeing / total indicators)",
+    "Unit tests cover: all agree (1.0), half agree (0.5), none agree (0.0)",
+    "Backward-compatible protobuf change (additive only)",
+    "Replay of historical `events.normalized` produces identical scores"
+  ],
+  "allowed_paths": [
+    "services/signal-engine-service/**",
+    "packages/shared/**"
+  ],
+  "required_contexts": {
+    "global": [
+      ".github/agent-contexts/platform-global.md"
+    ],
+    "domain": [
+      ".github/agent-contexts/domain-trading.md"
+    ],
+    "service": [
+      ".github/agent-contexts/service-signal-engine.md"
+    ]
+  },
+  "contracts_impact": false,
+  "nats_subjects_impact": [
+    "events.normalized",
+    "market.context.updated",
+    "signals.generated"
+  ],
+  "implementation_plan_path": "docs/ai/plans/ISSUE-1.md",
+  "review_focus": [
+    "correctness",
+    "reliability",
+    "testing"
+  ],
+  "route": {
+    "architect": "architect-agent",
+    "developers": [
+      "developer-trading-domain"
+    ],
+    "developer_focus": [
+      "signal-engine-service"
+    ],
+    "reviewers": [
+      "reviewer-trading-logic",
+      "reviewer-architecture"
+    ],
+    "requires_manual_plan_approval": false,
+    "requires_integration_review": false
+  }
+}
