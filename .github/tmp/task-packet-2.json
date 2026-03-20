@@ -1,0 +1,56 @@
+{
+  "task_id": "GH-2",
+  "task_type": "type/feature",
+  "area": "area/signal-engine",
+  "objective": "feat: add basic signal confidence score to signal-engine",
+  "constraints": [],
+  "acceptance_criteria": [
+    "New field `confidence_score float64` in `SignalGenerated` protobuf message",
+    "Confidence = number of agreeing indicators / total indicators evaluated",
+    "Pure, deterministic function \u2014 no side effects, no wall-clock dependency",
+    "Unit tests cover: all-agree (1.0), none-agree (0.0), partial (0.5), single indicator",
+    "Existing signal-engine tests continue to pass"
+  ],
+  "allowed_paths": [
+    "services/signal-engine-service/**",
+    "packages/shared/**"
+  ],
+  "required_contexts": {
+    "global": [
+      ".github/agent-contexts/platform-global.md"
+    ],
+    "domain": [
+      ".github/agent-contexts/domain-trading.md"
+    ],
+    "service": [
+      ".github/agent-contexts/service-signal-engine.md"
+    ]
+  },
+  "contracts_impact": false,
+  "nats_subjects_impact": [
+    "events.normalized",
+    "market.context.updated",
+    "signals.generated"
+  ],
+  "implementation_plan_path": "docs/ai/plans/ISSUE-2.md",
+  "review_focus": [
+    "correctness",
+    "reliability",
+    "testing"
+  ],
+  "route": {
+    "architect": "architect-agent",
+    "developers": [
+      "developer-trading-domain"
+    ],
+    "developer_focus": [
+      "signal-engine-service"
+    ],
+    "reviewers": [
+      "reviewer-trading-logic",
+      "reviewer-architecture"
+    ],
+    "requires_manual_plan_approval": false,
+    "requires_integration_review": false
+  }
+}
