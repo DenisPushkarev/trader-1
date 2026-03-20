@@ -71,7 +71,9 @@ jobs:
         run: |
           git config user.name  "architect-agent"
           git config user.email "architect-agent@github-actions"
+          git stash -u
           git pull --rebase origin main
+          git stash pop
           git add "docs/ai/plans/ISSUE-${ISSUE_NUMBER}.md"
           git diff --cached --quiet || git commit -m "docs: implementation plan for ISSUE-${ISSUE_NUMBER} [skip ci]"
           git push origin main
