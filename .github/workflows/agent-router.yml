@@ -1,0 +1,35 @@
+name: agent-router
+
+on:
+  issues:
+    types: [opened, labeled, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate labels and build task packet
+        run: |
+          echo "Load .github/routing/routing.yaml"
+          echo "Resolve task type, area, affected paths, contexts"
+          echo "Produce task packet JSON for downstream workflows"
+
+      - name: Trigger architect flow
+        if: github.event_name == 'issues' || contains(github.event.comment.body, '/plan')
+        run: |
+          echo "This workflow is the router."
+          echo "Dispatch architect-agent.yml with task metadata via workflow_call or repository_dispatch."
+
+      - name: Comment routing summary
+        run: |
+          echo "Post selected architect, developers, reviewers, and required approvals back to the issue."

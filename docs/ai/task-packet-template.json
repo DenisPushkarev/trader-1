@@ -1,0 +1,42 @@
+{
+  "task_id": "GH-101",
+  "task_type": "type/feature",
+  "area": "area/signal-engine",
+  "objective": "Add decay-aware multi-source confirmation to signal generation",
+  "constraints": [
+    "No breaking protobuf changes",
+    "Replay-safe behavior required"
+  ],
+  "acceptance_criteria": [
+    "Same replayed input set yields same output",
+    "Decay is configurable",
+    "Unit tests cover bullish, bearish, conflicting cases"
+  ],
+  "allowed_paths": [
+    "services/signal-engine-service/**",
+    "packages/shared/**"
+  ],
+  "required_contexts": {
+    "global": [
+      ".github/agent-contexts/platform-global.md"
+    ],
+    "domain": [
+      ".github/agent-contexts/domain-trading.md"
+    ],
+    "service": [
+      ".github/agent-contexts/service-signal-engine.md"
+    ]
+  },
+  "contracts_impact": false,
+  "nats_subjects_impact": [
+    "events.normalized",
+    "market.context.updated",
+    "signals.generated"
+  ],
+  "implementation_plan_path": "docs/ai/plans/ISSUE-101.md",
+  "review_focus": [
+    "correctness",
+    "reliability",
+    "testing"
+  ]
+}

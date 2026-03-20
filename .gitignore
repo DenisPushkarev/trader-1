@@ -1,0 +1,6 @@
+
+# Runner binaries (download on install, do not commit)
+actions-runner/
+setup/actions-runner/
+**/actions-runner-linux-*.tar.gz
+~/actions-runners/

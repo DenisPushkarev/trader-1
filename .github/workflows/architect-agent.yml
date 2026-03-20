@@ -1,0 +1,78 @@
+name: architect-agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        required: true
+        type: string
+      task_packet_path:
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: string
+      task_packet_path:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  architect:
+    runs-on: [self-hosted, linux, agent, architect]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show active model
+        run: |
+          MODEL=$(python3 -c "
+import yaml, sys
+cfg = yaml.safe_load(open('.github/agent-config.yml'))
+print(cfg['models']['architect'])
+")
+          echo "Architect model: $MODEL"
+
+      - name: Load platform context
+        run: |
+          cat .github/agent-contexts/platform-global.md
+          cat .github/agent-contexts/architect-context.md
+
+      - name: Load resolved task packet
+        run: |
+          cat "${{ inputs.task_packet_path }}"
+
+      - name: Generate implementation plan
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          echo "Architect agent must produce:"
+          echo "- docs/ai/plans/ISSUE-<n>.md"
+          echo "- affected paths"
+          echo "- NATS subject impact"
+          echo "- protobuf contract impact"
+          echo "- acceptance criteria"
+          echo "- risk register"
+          echo "- execution slices for developer agent"
+          # TODO: implement — assemble prompt and call:
+          # python3 .github/scripts/call-llm.py \
+          #   --role architect \
+          #   --system .github/agent-contexts/architect-context.md \
+          #   --prompt .github/tmp/architect-prompt.md \
+          #   > docs/ai/plans/ISSUE-${{ inputs.issue_number }}.md
+
+      - name: Publish plan to issue
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "Post plan as issue comment and add labels agent/planned and optionally agent/build-ready."
+          # TODO: implement:
+          # gh issue comment ${{ inputs.issue_number }} \
+          #   --body "$(cat docs/ai/plans/ISSUE-${{ inputs.issue_number }}.md)"
+          # gh issue edit ${{ inputs.issue_number }} --add-label agent/planned

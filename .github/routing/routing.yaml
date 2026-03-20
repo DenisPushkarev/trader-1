@@ -1,0 +1,123 @@
+version: 1
+project: ton-trading-platform
+
+labels:
+  required:
+    - one_of: [type/feature, type/bug, type/refactor, type/docs, type/test, type/chore]
+    - one_of: [area/collector, area/normalizer, area/signal-engine, area/risk-engine, area/market-context, area/explainability, area/api-gateway, area/simulation, area/contracts, area/platform, area/cross-service]
+
+routing_rules:
+  - name: contracts-change
+    when:
+      any_labels: [area/contracts]
+      any_paths:
+        - packages/contracts/**
+    route:
+      architect: architect-agent
+      developers: [developer-contracts]
+      reviewers: [reviewer-contracts, reviewer-architecture]
+      requires_manual_plan_approval: true
+      requires_integration_review: true
+
+  - name: signal-engine-local
+    when:
+      all_labels: [area/signal-engine]
+      any_paths:
+        - services/signal-engine-service/**
+        - packages/shared/**
+    route:
+      architect: architect-agent
+      developers: [developer-trading-domain]
+      developer_focus: [signal-engine-service]
+      reviewers: [reviewer-trading-logic, reviewer-architecture]
+      requires_manual_plan_approval: false
+      requires_integration_review: false
+
+  - name: risk-engine-local
+    when:
+      all_labels: [area/risk-engine]
+      any_paths:
+        - services/risk-engine-service/**
+        - packages/shared/**
+    route:
+      architect: architect-agent
+      developers: [developer-trading-domain]
+      developer_focus: [risk-engine-service]
+      reviewers: [reviewer-trading-logic, reviewer-architecture]
+      requires_manual_plan_approval: false
+      requires_integration_review: false
+
+  - name: market-context-local
+    when:
+      all_labels: [area/market-context]
+      any_paths:
+        - services/market-context-service/**
+    route:
+      architect: architect-agent
+      developers: [developer-market-data-domain]
+      developer_focus: [market-context-service]
+      reviewers: [reviewer-market-data, reviewer-architecture]
+      requires_manual_plan_approval: false
+      requires_integration_review: false
+
+  - name: cross-service-event-flow
+    when:
+      any_labels: [area/cross-service, area/platform]
+      any_paths:
+        - services/**
+        - packages/contracts/**
+        - packages/shared/**
+    route:
+      architect: architect-agent
+      developers: [developer-trading-domain, developer-market-data-domain]
+      reviewers: [reviewer-architecture, reviewer-contracts, reviewer-reliability]
+      requires_manual_plan_approval: true
+      requires_integration_review: true
+
+  - name: docs-or-api-only
+    when:
+      any_labels: [type/docs]
+      all_paths:
+        - docs/**
+    route:
+      architect: architect-agent
+      developers: [developer-docs]
+      reviewers: [reviewer-docs]
+      requires_manual_plan_approval: false
+      requires_integration_review: false
+
+default_route:
+  architect: architect-agent
+  developers: [developer-platform]
+  reviewers: [reviewer-architecture]
+  requires_manual_plan_approval: true
+  requires_integration_review: true
+
+path_to_context:
+  services/collector-service/**:
+    domain: domain-market-data.md
+    service: service-collector.md
+  services/normalizer-service/**:
+    domain: domain-market-data.md
+    service: service-normalizer.md
+  services/signal-engine-service/**:
+    domain: domain-trading.md
+    service: service-signal-engine.md
+  services/risk-engine-service/**:
+    domain: domain-trading.md
+    service: service-risk-engine.md
+  services/market-context-service/**:
+    domain: domain-market-data.md
+    service: service-market-context.md
+  services/explainability-service/**:
+    domain: domain-trading.md
+    service: service-explainability.md
+  services/api-gateway-service/**:
+    domain: domain-trading.md
+    service: service-api-gateway.md
+  services/simulation-service/**:
+    domain: domain-trading.md
+    service: service-simulation.md
+  packages/contracts/**:
+    domain: domain-trading.md
+    service: service-contracts.md

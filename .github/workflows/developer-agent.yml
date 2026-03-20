@@ -1,0 +1,124 @@
+name: developer-agent
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        required: true
+        type: string
+      task_packet_path:
+        required: true
+        type: string
+      implementation_plan_path:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'agent/build-ready'
+    runs-on: [self-hosted, linux, agent, developer]
+    timeout-minutes: 60
+    env:
+      TASK_PACKET: ${{ inputs.task_packet_path || '.github/tmp/task-packet.json' }}
+      IMPL_PLAN: ${{ inputs.implementation_plan_path || '.github/tmp/implementation-plan.md' }}
+      ISSUE_NUMBER: ${{ inputs.issue_number || github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history for branching
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          pip3 install --quiet pyyaml
+          # Install Claude Code CLI if not already installed
+          if ! command -v claude &>/dev/null; then
+            npm install -g @anthropic-ai/claude-code
+          fi
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "developer-agent"
+          git config user.email "developer-agent@github-actions"
+
+      - name: Create feature branch
+        run: |
+          BRANCH="agent/issue-${ISSUE_NUMBER}"
+          git checkout -b "$BRANCH" || git checkout "$BRANCH"
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Guardrails — validate task packet
+        run: |
+          python3 - <<'EOF'
+          import json, sys, os
+          path = os.environ["TASK_PACKET"]
+          if not os.path.exists(path):
+              print(f"ERROR: task packet not found: {path}")
+              sys.exit(1)
+          task = json.load(open(path))
+          for field in ("task_id", "objective", "allowed_paths", "acceptance_criteria"):
+              if not task.get(field):
+                  print(f"ERROR: task packet missing required field: {field}")
+                  sys.exit(1)
+          print(f"Task: {task['task_id']} — {task['objective']}")
+          print(f"Allowed paths: {task['allowed_paths']}")
+          print(f"Contracts impact: {task.get('contracts_impact', False)}")
+          EOF
+
+      - name: Build prompt for Claude Code
+        run: |
+          python3 .github/scripts/build-developer-prompt.py \
+            --task-packet "$TASK_PACKET" \
+            --plan "$IMPL_PLAN" \
+            --repo-root . \
+            > .github/tmp/developer-prompt.md
+          echo "--- Prompt preview (first 40 lines) ---"
+          head -40 .github/tmp/developer-prompt.md
+
+      - name: Run Claude Code (implement + test + commit)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Claude Code reads the prompt, edits files, runs tests, and commits.
+          # --allowedTools restricts what Claude can do (no network calls, no rm -rf etc.)
+          # --print runs non-interactively and exits when done.
+          claude \
+            --allowedTools "Edit,Bash" \
+            --print \
+            "$(cat .github/tmp/developer-prompt.md)"
+
+      - name: Verify commit was made
+        run: |
+          git log --oneline -3
+          # Fail if Claude did not commit anything
+          if git diff --quiet origin/main...HEAD; then
+            echo "ERROR: Claude Code made no commits. Check the prompt output above."
+            exit 1
+          fi
+
+      - name: Push branch
+        run: |
+          git push origin "$BRANCH"
+
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          OBJECTIVE=$(python3 -c "
+import json, os
+t = json.load(open(os.environ['TASK_PACKET']))
+print(t.get('objective',''))
+")
+          gh pr create \
+            --title "agent: ${OBJECTIVE}" \
+            --body "$(printf 'Closes #%s\n\nImplemented by developer-agent via Claude Code.\n\n**Task:** %s\n**Plan:** %s' \
+              "$ISSUE_NUMBER" "$TASK_PACKET" "$IMPL_PLAN")" \
+            --base main \
+            --head "$BRANCH"

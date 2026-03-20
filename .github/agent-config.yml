@@ -1,0 +1,41 @@
+# Agent Model Configuration — TON Trading Agent Flow
+# Repository: https://github.com/DenisPushkarev/trader-1
+#
+# Change the model values to any OpenRouter-supported model identifier.
+# Full list: https://openrouter.ai/models
+#
+# Recommended cost/quality tradeoffs:
+#   High quality : anthropic/claude-opus-4-5
+#   Balanced     : anthropic/claude-sonnet-4-5  |  openai/gpt-4o
+#   Fast/cheap   : openai/gpt-4o-mini  |  google/gemini-flash-1.5
+
+models:
+  # Architect: designs plans, analyzes bounded contexts, high reasoning required
+  # Uses OpenRouter — change to any model at https://openrouter.ai/models
+  architect: anthropic/claude-opus-4-5
+
+  # Developer: uses Claude Code directly (Anthropic API), NOT OpenRouter.
+  # Claude model is controlled by ANTHROPIC_API_KEY + claude CLI defaults.
+  # To pin a specific model pass --model flag in developer-agent.yml.
+  # developer: (managed by Claude Code CLI)
+
+  # Reviewer: reviews diffs, checks contracts and architecture
+  # Uses OpenRouter
+  reviewer: anthropic/claude-sonnet-4-5
+
+  # Router: label validation, task packet assembly — cheap model is fine
+  # Uses OpenRouter
+  router: openai/gpt-4o-mini
+
+openrouter:
+  base_url: https://openrouter.ai/api/v1
+  # Shown in OpenRouter analytics (optional but helpful for tracking)
+  site_url: https://github.com/DenisPushkarev/trader-1
+  site_name: TON Trading Agent Flow
+
+# Maximum tokens per agent call (adjust per model limits and cost constraints)
+max_tokens:
+  architect: 8192
+  developer: 16384
+  reviewer: 4096
+  router: 2048
