@@ -2,32 +2,34 @@
 
 ## Objective
 
-Add a basic confidence score to the signal-engine-service that quantifies signal reliability based on indicator agreement. The confidence score is calculated as the ratio of agreeing indicators to total indicators evaluated, producing a value between 0.0 and 1.0.
+Add a basic signal confidence score to the signal-engine-service that quantifies the level of agreement among evaluated indicators. The confidence score is calculated as the ratio of agreeing indicators to total indicators evaluated, producing a value in the range [0.0, 1.0].
 
 ## Scope
 
-- Add `confidence_score` field (float64, range 0.0–1.0) to the `SignalGenerated` protobuf message
+- Add `confidence_score` field (float64/double) to the `SignalGenerated` protobuf message
 - Implement a pure, deterministic confidence calculation function within signal-engine-service
-- Integrate confidence scoring into the existing signal generation pipeline
-- Unit tests covering all specified edge cases
+- Integrate confidence calculation into the signal generation pipeline
+- Add comprehensive unit tests for the confidence calculation logic
+- Ensure backward compatibility of the protobuf contract
 
 ## Out of scope
 
 - Changes to downstream consumers (risk-engine-service, explainability-service, api-gateway-service)
-- Persistence of confidence scores to PostgreSQL
-- Confidence score thresholds for signal filtering
-- Weighted indicator contributions (all indicators weighted equally)
-- Changes to `events.normalized` or `market.context.updated` message schemas
+- Modifications to `events.normalized` or `market.context.updated` message schemas
+- Persistence of confidence scores to database
+- Configuration-driven weighting of indicators (future enhancement)
+- UI/API exposure of confidence scores (handled by downstream services)
 
 ## Bounded contexts impacted
 
-| Bounded Context | Impact | Ownership |
-|-----------------|--------|-----------|
-| Signal Generation (signal-engine-service) | Primary — new field computation and emission | Owns `signals.generated` |
-| Risk Adjustment (risk-engine-service) | None — will receive new field but no code changes required | Consumer only |
-| Explainability (explainability-service) | None — may later use field but not in scope | Consumer only |
+| Bounded Context | Service | Impact |
+|-----------------|---------|--------|
+| Signal Generation | signal-engine-service | **Primary** — owns confidence calculation logic and emits enriched signal |
+| Risk Adjustment | risk-engine-service | **Read-only consumer** — will receive new field, no code changes required (additive) |
+| Explainability | explainability-service | **Read-only consumer** — may utilize new field in future, no immediate changes |
+| Simulation | simulation-service | **Read-only consumer** — will observe new field in simulated signals |
 
-**Ownership clarification**: signal-engine-service is the sole owner of the `SignalGenerated` schema and the `signals.generated` subject. Downstream services consume but do not mutate.
+Ownership boundaries remain unchanged. The `signals.generated` subject continues to be owned exclusively by signal-engine-service.
 
 ## Services/packages impacted
 
@@ -36,17 +38,17 @@ Add a basic confidence score to the signal-engine-service that quantifies signal
 | `packages/contracts/` | Additive | Add `confidence_score` field to `SignalGenerated` message |
 | `services/signal-engine-service/internal/domain/` | New | Confidence calculation pure function |
 | `services/signal-engine-service/internal/application/` | Modification | Integrate confidence into signal generation use case |
-| `packages/shared/` | None anticipated | No shared utilities required for this feature |
+| `packages/shared/` | None | No changes anticipated |
 
 ## NATS subjects impacted
 
-| Subject | Impact | Direction | Notes |
-|---------|--------|-----------|-------|
-| `events.normalized` | None | Consumed | No schema or consumption logic changes |
-| `market.context.updated` | None | Consumed | No schema or consumption logic changes |
-| `signals.generated` | Additive | Published | New `confidence_score` field in payload |
+| Subject | Ownership | Impact |
+|---------|-----------|--------|
+| `events.normalized` | normalizer-service | **No change** — read-only consumption continues |
+| `market.context.updated` | market-context-service | **No change** — read-only consumption continues |
+| `signals.generated` | signal-engine-service | **Additive payload change** — new field `confidence_score` added to published messages |
 
-**Ownership**: signal-engine-service owns publication to `signals.generated`. No subject ownership changes.
+No subject semantics change. No new subjects introduced. No ownership transfer.
 
 ## Protobuf contract impact
 
@@ -55,163 +57,221 @@ Add a basic confidence score to the signal-engine-service that quantifies signal
 ```protobuf
 // packages/contracts/signals/v1/signal_generated.proto
 message SignalGenerated {
-  // ... existing fields unchanged ...
+  // ... existing fields ...
   
-  // NEW: Confidence score based on indicator agreement ratio.
-  // Range: 0.0 (no agreement) to 1.0 (full agreement).
+  // NEW: Confidence score representing indicator agreement ratio.
+  // Range: [0.0, 1.0] where 1.0 = all indicators agree, 0.0 = no agreement.
   // Added in GH-2.
   double confidence_score = <next_field_number>;
 }
 ```
 
-**Compatibility analysis**:
-- Existing consumers ignore unknown fields (protobuf3 default behavior)
-- No field renumbering or removal
+**Compatibility analysis:**
+- Existing consumers will ignore the new field (protobuf default behavior)
+- No field renumbering or type changes to existing fields
 - No semantic change to existing fields
-- Default value (0.0) is safe for consumers that don't read the field yet
+- Wire format remains backward-compatible
+- Replay of historical events (without `confidence_score`) will deserialize with default value `0.0`
 
-**Migration notes**: None required. Downstream services can adopt the field at their own pace.
+**Migration notes:**
+- Downstream services should treat `confidence_score == 0.0` as either "not computed" (historical) or "zero agreement" — context from signal timestamp can disambiguate if needed
+- No coordinated deployment required; services can upgrade independently
 
 ## Data/storage impact
 
 **None.**
 
-- No PostgreSQL schema changes
-- No Redis key structure changes
-- Confidence score is computed on-the-fly from in-memory indicator state
-- No new persistence requirements introduced
+- No new database tables or columns required
+- No Redis key schema changes
+- Confidence score is computed on-the-fly and emitted in the event payload
+- If future persistence is needed, it will be a separate task
 
 ## Idempotency and replay considerations
 
-**Replay-safe: YES**
+**Replay safety: PRESERVED**
 
-| Consideration | Analysis |
-|---------------|----------|
-| Determinism | Confidence calculation is a pure function of indicator evaluation results; same inputs → same output |
-| Time independence | No wall-clock dependency; uses only event-provided timestamps if needed |
-| External state | No external API calls or database reads in confidence calculation |
-| Idempotency | Signal emission idempotency unchanged; confidence is just an additional field |
+| Aspect | Assessment |
+|--------|------------|
+| Determinism | Confidence calculation is pure: `f(indicators) → score`. Same input indicators yield identical score. |
+| Time independence | No wall-clock dependency. No `time.Now()` in calculation path. |
+| Side effects | None. Calculation does not mutate state or trigger external calls. |
+| Historical replay | Safe. Replaying `events.normalized` with same `market.context.updated` snapshot produces identical `signals.generated` including `confidence_score`. |
+| Deduplication | Existing dedup strategy (Redis key by event ID) remains valid. |
 
-**Verification approach**: Replay integration test should produce byte-identical `SignalGenerated` messages (including confidence_score) for identical input sequences.
+**Invariant preserved:** Same replayed inputs + same market context snapshot ⇒ same signal outcome (including confidence).
 
 ## Acceptance criteria
 
-- [ ] `SignalGenerated` protobuf message includes `confidence_score` field (double, field number assigned)
-- [ ] Confidence formula: `confidence_score = agreeing_indicators / total_indicators`
-- [ ] Function is pure: no side effects, no wall-clock reads, no external state
-- [ ] Unit test: all indicators agree → confidence = 1.0
-- [ ] Unit test: no indicators agree → confidence = 0.0
-- [ ] Unit test: partial agreement (e.g., 2/4) → confidence = 0.5
-- [ ] Unit test: single indicator → confidence = 1.0 (agrees with itself) or 0.0 (if signal direction undefined)
-- [ ] Unit test: zero indicators evaluated → confidence = 0.0 (defined behavior, no division by zero)
-- [ ] All existing signal-engine-service tests pass without modification
-- [ ] Protobuf contract compiles and is backward-compatible
+- [ ] `SignalGenerated` protobuf message contains new field `confidence_score` of type `double`
+- [ ] Field is assigned the next available field number with no renumbering of existing fields
+- [ ] Confidence calculation implemented as: `confidence_score = agreeing_indicators / total_indicators`
+- [ ] Calculation function is pure — no side effects, no wall-clock reads, no I/O
+- [ ] Calculation function is deterministic — same inputs always produce same output
+- [ ] Unit test: all indicators agree → `confidence_score = 1.0`
+- [ ] Unit test: no indicators agree → `confidence_score = 0.0`
+- [ ] Unit test: partial agreement (e.g., 2/4) → `confidence_score = 0.5`
+- [ ] Unit test: single indicator evaluated → `confidence_score = 1.0` (if agrees) or `0.0` (if not)
+- [ ] Edge case: zero indicators evaluated → handled gracefully (define behavior: return 0.0 or error)
+- [ ] All existing signal-engine-service tests pass without modification (unless they explicitly check message structure)
+- [ ] Protobuf regeneration successful with no breaking changes detected
 
 ## Developer slices
 
-### Slice 1: Protobuf contract update
-**Scope**: `packages/contracts/`  
-**Effort**: Small  
-**Dependencies**: None
+### Slice 1: Protobuf contract update (packages/contracts)
 
-1. Add `confidence_score` field to `SignalGenerated` in `packages/contracts/signals/v1/signal_generated.proto`
-2. Assign next available field number
-3. Add field documentation comment explaining semantics and range
-4. Run `make proto` or equivalent to regenerate Go bindings
-5. Verify compilation succeeds
+**Goal:** Add `confidence_score` field to `SignalGenerated` message.
 
-**Exit criteria**: Generated Go code compiles; no existing tests broken.
+**Tasks:**
+1. Open `packages/contracts/signals/v1/signal_generated.proto`
+2. Identify next available field number
+3. Add field: `double confidence_score = N;`
+4. Add field comment documenting semantics, range, and GH-2 reference
+5. Run protobuf code generation (`make proto` or equivalent)
+6. Verify generated Go code compiles
+7. Commit with message: `proto: add confidence_score to SignalGenerated (GH-2)`
+
+**Verification:** `go build ./...` succeeds, no existing tests break.
+
+**Estimated complexity:** Low
 
 ---
 
-### Slice 2: Domain layer — confidence calculation function
-**Scope**: `services/signal-engine-service/internal/domain/`  
-**Effort**: Small  
-**Dependencies**: None (can parallel with Slice 1)
+### Slice 2: Domain logic — confidence calculation function (signal-engine-service)
 
-1. Create `confidence.go` (or add to existing scoring module)
-2. Implement pure function:
+**Goal:** Implement pure confidence calculation function in domain layer.
+
+**Tasks:**
+1. Create file: `services/signal-engine-service/internal/domain/confidence.go`
+2. Define types if needed:
    ```go
-   func CalculateConfidence(agreeing, total int) float64
+   type IndicatorResult struct {
+       Name    string
+       Agrees  bool // true if indicator supports signal direction
+   }
    ```
-3. Handle edge cases:
-   - `total == 0` → return `0.0`
-   - `agreeing > total` → clamp or error (define behavior)
-4. No dependencies on external packages beyond stdlib
+3. Implement function:
+   ```go
+   func CalculateConfidence(results []IndicatorResult) float64
+   ```
+4. Handle edge cases:
+   - Empty slice → return `0.0` (document this decision)
+   - All agree → `1.0`
+   - None agree → `0.0`
+5. Ensure no dependencies on time, I/O, or external state
+6. Commit with message: `domain: add CalculateConfidence function (GH-2)`
 
-**Exit criteria**: Function implemented with clear documentation.
+**Verification:** Function compiles, ready for unit tests.
 
----
-
-### Slice 3: Unit tests for confidence calculation
-**Scope**: `services/signal-engine-service/internal/domain/`  
-**Effort**: Small  
-**Dependencies**: Slice 2
-
-1. Create `confidence_test.go`
-2. Table-driven tests covering:
-   - `(4, 4)` → `1.0` (all agree)
-   - `(0, 4)` → `0.0` (none agree)
-   - `(2, 4)` → `0.5` (partial)
-   - `(1, 1)` → `1.0` (single indicator)
-   - `(0, 0)` → `0.0` (no indicators)
-3. Test determinism: same inputs always produce same output
-4. Run `go test -race` to verify no concurrency issues
-
-**Exit criteria**: All unit tests pass; coverage on confidence function ≥ 95%.
+**Estimated complexity:** Low
 
 ---
 
-### Slice 4: Application layer integration
-**Scope**: `services/signal-engine-service/internal/application/`  
-**Effort**: Medium  
-**Dependencies**: Slice 1, Slice 2
+### Slice 3: Unit tests for confidence calculation (signal-engine-service)
 
-1. Identify signal generation use case / handler
-2. Determine where indicator evaluation results are available
-3. Call `CalculateConfidence(agreeing, total)` after indicator evaluation
-4. Populate `confidence_score` field in `SignalGenerated` message before publishing
-5. Ensure no mutation of existing signal fields
+**Goal:** Comprehensive test coverage for `CalculateConfidence`.
 
-**Exit criteria**: Confidence score populated in all emitted signals.
+**Tasks:**
+1. Create file: `services/signal-engine-service/internal/domain/confidence_test.go`
+2. Implement table-driven tests:
+   ```go
+   func TestCalculateConfidence(t *testing.T) {
+       tests := []struct {
+           name     string
+           results  []IndicatorResult
+           expected float64
+       }{
+           {"all agree", [...], 1.0},
+           {"none agree", [...], 0.0},
+           {"partial 2/4", [...], 0.5},
+           {"single agree", [...], 1.0},
+           {"single disagree", [...], 0.0},
+           {"empty", [], 0.0},
+       }
+       // ...
+   }
+   ```
+3. Use tolerance-based float comparison (e.g., `math.Abs(got-want) < 1e-9`)
+4. Commit with message: `test: add CalculateConfidence unit tests (GH-2)`
+
+**Verification:** `go test ./services/signal-engine-service/internal/domain/...` passes.
+
+**Estimated complexity:** Low
 
 ---
 
-### Slice 5: Integration verification
-**Scope**: `services/signal-engine-service/`  
-**Effort**: Small  
-**Dependencies**: Slice 4
+### Slice 4: Integration into signal generation pipeline (signal-engine-service)
 
-1. Run all existing signal-engine-service tests
-2. Verify no regressions
-3. Add or update integration test to verify `confidence_score` is present and correct in emitted messages
-4. Verify replay produces deterministic confidence values
+**Goal:** Wire confidence calculation into the application layer where signals are generated.
 
-**Exit criteria**: All tests green; CI passes.
+**Tasks:**
+1. Locate signal generation use case (likely `internal/application/` or `internal/service/`)
+2. Identify where `SignalGenerated` message is constructed
+3. Collect indicator evaluation results into `[]IndicatorResult` structure
+4. Call `domain.CalculateConfidence(results)`
+5. Assign result to `SignalGenerated.ConfidenceScore` field
+6. Ensure no introduction of time-dependent or non-deterministic behavior
+7. Commit with message: `app: integrate confidence_score into signal generation (GH-2)`
+
+**Verification:** Service compiles, existing tests pass.
+
+**Estimated complexity:** Medium (requires understanding existing signal generation flow)
+
+---
+
+### Slice 5: Integration test validation (signal-engine-service)
+
+**Goal:** Verify end-to-end signal generation includes confidence score.
+
+**Tasks:**
+1. Review existing integration/e2e tests for signal-engine-service
+2. Add or extend test case that:
+   - Publishes known `events.normalized` messages
+   - Sets up known `market.context.updated` state
+   - Consumes resulting `signals.generated`
+   - Asserts `confidence_score` is present and correct
+3. If no integration tests exist, document this as a gap (do not block PR)
+4. Commit with message: `test: validate confidence_score in signal output (GH-2)`
+
+**Verification:** Integration tests pass, or gap documented.
+
+**Estimated complexity:** Low–Medium
+
+---
+
+### Slice 6: Documentation and final verification
+
+**Goal:** Update documentation and perform final validation.
+
+**Tasks:**
+1. Update service README if it documents output schema
+2. Add inline code comments explaining confidence calculation semantics
+3. Run full test suite: `go test ./services/signal-engine-service/...`
+4. Run linter: `golangci-lint run ./services/signal-engine-service/...`
+5. Verify protobuf backward compatibility (no field renumbering)
+6. Commit with message: `docs: document confidence_score feature (GH-2)`
+
+**Verification:** All checks pass, PR ready for review.
+
+**Estimated complexity:** Low
 
 ## Reviewer focus
 
 | Reviewer | Focus Areas |
 |----------|-------------|
-| reviewer-trading-logic | Correctness of confidence formula; edge case handling; determinism guarantee |
-| reviewer-architecture | Protobuf evolution safety; no unintended coupling; clean architecture adherence |
-
-**Specific review checkpoints**:
-
-- **Correctness**: Verify `agreeing/total` logic matches documented indicator agreement semantics
-- **Contracts**: Confirm field number doesn't conflict; documentation present; backward-compatible
-- **Architecture**: Confidence function in domain layer (not application); no infrastructure dependencies
-- **Reliability**: No panics on edge cases; no floating-point precision issues affecting equality checks
+| reviewer-trading-logic | **Correctness** — Verify confidence formula matches acceptance criteria. Validate edge case handling (empty indicators, single indicator). Confirm determinism and purity of calculation. |
+| reviewer-architecture | **Contracts** — Verify protobuf change is additive only. Confirm field number assignment is correct. Validate no breaking changes to existing fields. **Architecture** — Confirm domain/application layer separation. Verify no inappropriate coupling introduced. |
+| Both | **Reliability** — Ensure replay safety preserved. Verify no wall-clock or side-effect dependencies. Confirm existing tests unaffected. **Testing** — Validate test coverage meets acceptance criteria. Check edge cases are covered. |
 
 ## Risks
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Ambiguous "agreeing" definition | Medium | Medium | Document clearly: agreeing = indicator direction matches signal direction |
-| Division by zero | Low | High | Explicit guard: `if total == 0 { return 0.0 }` |
-| Floating-point comparison issues in tests | Low | Low | Use tolerance-based comparison (`math.Abs(got-want) < epsilon`) |
-| Field number collision in protobuf | Low | High | Check existing `.proto` file for next available number before PR |
-| Downstream consumer breaks on new field | Very Low | Low | Protobuf3 ignores unknown fields; no action needed |
-| Confidence semantics unclear for single indicator | Medium | Low | Define: single indicator always agrees with itself → 1.0 if signal emitted |
+| Protobuf field number collision | Low | High | Verify next available field number before implementation. Use `protoc` validation. |
+| Downstream services fail on new field | Very Low | Medium | Protobuf guarantees backward compatibility for additive changes. No mitigation needed, but monitor after deployment. |
+| Indicator agreement semantics unclear | Medium | Medium | Clarify with domain expert: what constitutes "agreement"? Document decision in code comments. |
+| Division by zero (zero indicators) | Low | Medium | Explicitly handle in `CalculateConfidence` — return `0.0` and document. |
+| Float precision issues in tests | Low | Low | Use tolerance-based comparison in unit tests. |
+| Existing tests assume exact message structure | Low | Low | Review existing tests; update assertions if they explicitly check for absence of `confidence_score`. |
+| Signal generation flow harder to modify than expected | Medium | Low | Slice 4 may require refactoring. If significant, split into sub-slices and document deviations. |
 
-**No blocking risks identified. Proceed with implementation.**
+**Rollback strategy:** If issues discovered post-deployment, confidence calculation can be disabled by setting `confidence_score = 0.0` unconditionally. Downstream consumers already handle this value. Full rollback requires re-deploying previous signal-engine-service version — no data migration needed.
