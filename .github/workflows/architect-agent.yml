@@ -32,11 +32,7 @@ jobs:
 
       - name: Show active model
         run: |
-          MODEL=$(python3 -c "
-import yaml, sys
-cfg = yaml.safe_load(open('.github/agent-config.yml'))
-print(cfg['models']['architect'])
-")
+          MODEL=$(python3 -c "import yaml; print(yaml.safe_load(open('.github/agent-config.yml'))['models']['architect'])")
           echo "Architect model: $MODEL"
 
       - name: Load platform context

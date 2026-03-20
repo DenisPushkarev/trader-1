@@ -111,11 +111,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          OBJECTIVE=$(python3 -c "
-import json, os
-t = json.load(open(os.environ['TASK_PACKET']))
-print(t.get('objective',''))
-")
+          OBJECTIVE=$(python3 -c "import json,os; t=json.load(open(os.environ['TASK_PACKET'])); print(t.get('objective',''))")
           gh pr create \
             --title "agent: ${OBJECTIVE}" \
             --body "$(printf 'Closes #%s\n\nImplemented by developer-agent via Claude Code.\n\n**Task:** %s\n**Plan:** %s' \

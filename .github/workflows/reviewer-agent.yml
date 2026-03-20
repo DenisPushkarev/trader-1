@@ -28,11 +28,7 @@ jobs:
 
       - name: Show active model
         run: |
-          MODEL=$(python3 -c "
-import yaml
-cfg = yaml.safe_load(open('.github/agent-config.yml'))
-print(cfg['models']['reviewer'])
-")
+          MODEL=$(python3 -c "import yaml; print(yaml.safe_load(open('.github/agent-config.yml'))['models']['reviewer'])")
           echo "Reviewer model: $MODEL"
 
       - name: Collect diff and related plan
