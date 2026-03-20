@@ -28,7 +28,7 @@ jobs:
     runs-on: [self-hosted, linux, agent, architect]
     timeout-minutes: 30
     env:
-      TASK_PACKET: .github/tmp/task-packet.json
+      TASK_PACKET: /tmp/task-packet-${{ inputs.issue_number }}.json
       TASK_PACKET_JSON: ${{ inputs.task_packet_json }}
       ISSUE_NUMBER: ${{ inputs.issue_number }}
     steps:
@@ -37,7 +37,7 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Write task packet
-        run: mkdir -p .github/tmp && echo "$TASK_PACKET_JSON" > "$TASK_PACKET"
+        run: echo "$TASK_PACKET_JSON" > "$TASK_PACKET"
 
       - name: Install dependencies
         run: pip3 install --quiet --break-system-packages pyyaml requests
@@ -51,22 +51,16 @@ jobs:
         run: |
           python3 -c "import json,sys,os; p=os.environ['TASK_PACKET']; (print('ERROR: task packet not found: '+p) or sys.exit(1)) if not os.path.exists(p) else None; t=json.load(open(p)); print('Task: '+str(t.get('task_id','?'))+' — '+str(t.get('objective','?'))); print('Area: '+str(t.get('area','?')))"
 
-      - name: Build architect prompt
-        run: |
-          mkdir -p .github/tmp docs/ai/plans
-          python3 .github/scripts/build-architect-prompt.py \
-            --task-packet "$TASK_PACKET" \
-            > .github/tmp/architect-prompt.md
-          echo "--- Prompt size: $(wc -c < .github/tmp/architect-prompt.md) bytes ---"
-          head -20 .github/tmp/architect-prompt.md
-
-      - name: Generate implementation plan
+      - name: Build prompt and generate implementation plan
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          python3 .github/scripts/call-llm.py \
-            --role architect \
-            --prompt .github/tmp/architect-prompt.md \
+          mkdir -p docs/ai/plans
+          python3 .github/scripts/build-architect-prompt.py \
+            --task-packet "$TASK_PACKET" \
+          | python3 .github/scripts/call-llm.py \
+              --role architect \
+              --prompt - \
             > "docs/ai/plans/ISSUE-${ISSUE_NUMBER}.md"
           echo "--- Plan preview ---"
           head -30 "docs/ai/plans/ISSUE-${ISSUE_NUMBER}.md"

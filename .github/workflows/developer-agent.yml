@@ -34,7 +34,7 @@ jobs:
     runs-on: [self-hosted, linux, agent, developer]
     timeout-minutes: 60
     env:
-      TASK_PACKET: .github/tmp/task-packet.json
+      TASK_PACKET: /tmp/task-packet-${{ inputs.issue_number }}.json
       TASK_PACKET_JSON: ${{ inputs.task_packet_json }}
       PLAN_PATH: ${{ inputs.plan_path }}
       ISSUE_NUMBER: ${{ inputs.issue_number }}
@@ -52,7 +52,7 @@ jobs:
           fi
 
       - name: Write task packet
-        run: mkdir -p .github/tmp && echo "$TASK_PACKET_JSON" > "$TASK_PACKET"
+        run: echo "$TASK_PACKET_JSON" > "$TASK_PACKET"
 
       - name: Validate task packet
         run: |
@@ -68,25 +68,17 @@ jobs:
           echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
           echo "BEFORE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
-      - name: Build prompt for Claude Code
+      - name: Build prompt and run Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          mkdir -p .github/tmp
           python3 .github/scripts/build-developer-prompt.py \
             --task-packet "$TASK_PACKET" \
             --plan "$PLAN_PATH" \
             --repo-root . \
-            > .github/tmp/developer-prompt.md
-          echo "--- Prompt size: $(wc -c < .github/tmp/developer-prompt.md) bytes ---"
-          head -30 .github/tmp/developer-prompt.md
-
-      - name: Run Claude Code
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          claude \
-            --allowedTools "Edit,Write,Bash,Read,MultiEdit" \
-            --print \
-            "$(cat .github/tmp/developer-prompt.md)"
+          | claude \
+              --allowedTools "Edit,Write,Bash,Read,MultiEdit" \
+              --print
 
       - name: Verify Claude made changes
         run: |
