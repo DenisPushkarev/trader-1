@@ -1,0 +1,114 @@
+name: developer-agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        required: true
+        type: string
+      task_packet_json:
+        required: true
+        type: string
+      plan_path:
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: string
+      task_packet_json:
+        required: true
+        type: string
+      plan_path:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, agent, developer]
+    timeout-minutes: 60
+    env:
+      TASK_PACKET: /tmp/task-packet-${{ inputs.issue_number }}.json
+      TASK_PACKET_JSON: ${{ inputs.task_packet_json }}
+      PLAN_PATH: ${{ inputs.plan_path }}
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          pip3 install --quiet --break-system-packages pyyaml
+          if ! command -v claude &>/dev/null; then
+            npm install -g @anthropic-ai/claude-code
+          fi
+
+      - name: Write task packet
+        run: echo "$TASK_PACKET_JSON" > "$TASK_PACKET"
+
+      - name: Validate task packet
+        run: |
+          python3 -c "
+          import json, sys, os
+          t = json.load(open(os.environ['TASK_PACKET']))
+          for f in ('task_id', 'objective', 'allowed_paths', 'acceptance_criteria'):
+              if not t.get(f):
+                  print('Missing: ' + f)
+                  sys.exit(1)
+          print('Task: ' + t['task_id'] + ' - ' + t['objective'])
+          "
+
+      - name: Configure git and create feature branch
+        run: |
+          git config user.name  "developer-agent"
+          git config user.email "developer-agent@github-actions"
+          BRANCH="agent/issue-${ISSUE_NUMBER}"
+          git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
+          git reset --hard origin/main
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          echo "BEFORE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Build prompt and run Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 .github/scripts/build-developer-prompt.py \
+            --task-packet "$TASK_PACKET" \
+            --plan "$PLAN_PATH" \
+            --repo-root . \
+          | claude \
+              --allowedTools "Edit,Write,Bash,Read,MultiEdit" \
+              --print
+
+      - name: Verify changes were made
+        run: |
+          git log --oneline -5
+          if [ "$(git rev-parse HEAD)" = "$BEFORE_SHA" ]; then
+            echo "ERROR: Claude Code made no commits."
+            exit 1
+          fi
+
+      - name: Push branch
+        run: git push origin "$BRANCH" --force-with-lease
+
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          OBJECTIVE=$(python3 -c "import json,os; t=json.load(open(os.environ['TASK_PACKET'])); print(t.get('objective',''))")
+          PLAN_PREVIEW=$(head -25 "$PLAN_PATH" 2>/dev/null || echo '(plan not found)')
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "agent: ${OBJECTIVE}" \
+            --body "$(printf 'Closes #%s\n\nImplemented by developer-agent via Claude Code.\n\n### Plan Summary\n\n%s' "$ISSUE_NUMBER" "$PLAN_PREVIEW")" \
+            --base main \
+            --head "$BRANCH" \
+            2>/dev/null || echo "PR already exists — skipping"
