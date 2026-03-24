@@ -1,0 +1,211 @@
+version: "3.9"
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: >
+      --jetstream
+      --store_dir=/data
+      --max_payload=8MB
+      --http_port=8222
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader_secret
+      POSTGRES_DB: trader
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  collector-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: collector-service
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8080
+      LOG_LEVEL: info
+    ports:
+      - "8090:8080"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  normalizer-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: normalizer-service
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8081
+      LOG_LEVEL: info
+    ports:
+      - "8091:8081"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  market-context-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: market-context-service
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8082
+      LOG_LEVEL: info
+    ports:
+      - "8092:8082"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  signal-engine-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: signal-engine-service
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8083
+      LOG_LEVEL: info
+    ports:
+      - "8093:8083"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  risk-engine-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: risk-engine-service
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8084
+      LOG_LEVEL: info
+    ports:
+      - "8094:8084"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  explainability-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: explainability-service
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8085
+      LOG_LEVEL: info
+    ports:
+      - "8095:8085"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api-gateway-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: api-gateway-service
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8080
+      LOG_LEVEL: info
+    ports:
+      - "8080:8080"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  simulation-service:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args:
+        SERVICE: simulation-service
+    environment:
+      HTTP_ADDR: :8087
+      LOG_LEVEL: info
+    ports:
+      - "8087:8087"
+    restart: unless-stopped
+
+volumes:
+  nats_data:
+  postgres_data:
+  redis_data:

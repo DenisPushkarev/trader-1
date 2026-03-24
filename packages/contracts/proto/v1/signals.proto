@@ -1,0 +1,54 @@
+syntax = "proto3";
+package ton.trading.v1;
+option go_package = "github.com/trader-1/trader-1/packages/contracts/gen/go/v1;contractsv1";
+
+import "v1/common.proto";
+
+message DecayConfig {
+  int64 half_life_seconds = 1;
+  double min_confidence = 2;
+}
+
+message GeneratedSignal {
+  string signal_id = 1;
+  Direction direction = 2;
+  double confidence = 3;
+  repeated string contributing_events = 4;
+  string market_context_id = 5;
+  DecayConfig decay_config = 6;
+  string config_version = 7;
+  int64 timestamp_ms = 8;
+}
+
+message ConfidenceAdjustment {
+  string reason = 1;
+  double delta = 2;
+}
+
+message RiskAdjustedSignal {
+  string risk_signal_id = 1;
+  string original_signal_id = 2;
+  double adjusted_confidence = 3;
+  RiskLevel risk_level = 4;
+  bool blocked = 5;
+  string block_reason = 6;
+  repeated ConfidenceAdjustment adjustments = 7;
+  string risk_config_version = 8;
+  int64 timestamp_ms = 9;
+}
+
+message ExplanationFactor {
+  string name = 1;
+  string description = 2;
+  double weight = 3;
+}
+
+message ExplainedSignal {
+  string explain_id = 1;
+  string signal_id = 2;
+  string summary = 3;
+  repeated ExplanationFactor factors = 4;
+  string recommendation = 5;
+  string explain_config_version = 6;
+  int64 timestamp_ms = 7;
+}

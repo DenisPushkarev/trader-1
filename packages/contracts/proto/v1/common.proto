@@ -1,0 +1,23 @@
+syntax = "proto3";
+package ton.trading.v1;
+option go_package = "github.com/trader-1/trader-1/packages/contracts/gen/go/v1;contractsv1";
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_BULLISH = 1;
+  DIRECTION_BEARISH = 2;
+  DIRECTION_NEUTRAL = 3;
+}
+
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  RISK_LEVEL_LOW = 1;
+  RISK_LEVEL_MEDIUM = 2;
+  RISK_LEVEL_HIGH = 3;
+  RISK_LEVEL_CRITICAL = 4;
+}
+
+message SourceReference {
+  string source = 1;
+  string source_event_id = 2;
+}
